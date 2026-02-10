@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Image Studio</title>
+    <meta name="description" content="เครื่องมือจัดการรูปภาพออนไลน์ ลบพื้นหลังและตัดแบ่งรูปภาพ ฟรี ไม่ต้องติดตั้งโปรแกรม">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#4f46e5',
+                        secondary: '#ec4899',
+                        surface: '#ffffff',
+                        background: '#f8fafc',
+                        line: '#06c755',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f8fafc; color: #1e293b; }
+        
+        .canvas-bg {
+            background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%), 
+                              linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #e2e8f0 75%), 
+                              linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            background-color: #ffffff;
+        }
+
+        .drag-active {
+            border-color: #4f46e5 !important;
+            background-color: #eef2ff !important;
+            transform: scale(1.01);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        .cursor-grab-v { cursor: col-resize; }
+        .cursor-grab-h { cursor: row-resize; }
+        .cursor-add-v { cursor: cell; } 
+        
+        .tool-btn.active {
+            background-color: #fce7f3;
+            color: #be185d;
+            border-color: #fbcfe8;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 p-2 rounded-lg text-white shadow-md">
+                        <i data-lucide="layers" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-slate-800 tracking-tight">Image<span class="text-indigo-600">Studio</span></h1>
+                        <p class="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Professional Web Tools</p>
+                    </div>
+                </div>
+                <!-- Mode Switcher -->
+                <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl self-center border border-slate-200">
+                    <button id="navChroma" onclick="switchMode('chroma')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all bg-white text-indigo-600 shadow-sm flex items-center gap-2">
+                        <i data-lucide="wand-2" class="w-4 h-4"></i> ลบพื้นหลัง
+                    </button>
+                    <button id="navSlicer" onclick="switchMode('slicer')" class="px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700 flex items-center gap-2">
+                        <i data-lucide="scissors" class="w-4 h-4"></i> ตัดแบ่งรูป
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- ================== MODE 1: CHROMA KEY ================== -->
+        <div id="sectionChroma" class="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
+            <div class="lg:col-span-4 space-y-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                    <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="w-1 h-6 bg-indigo-600 rounded-full"></span>
+                        เครื่องมือลบพื้นหลัง
+                    </h2>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-slate-700 mb-2">1. อัปโหลดรูปภาพ</label>
+                        <div id="dropChroma" class="relative group cursor-pointer">
+                            <input type="file" id="inpChroma" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center transition-all group-hover:border-indigo-400 group-hover:bg-slate-50">
+                                <div class="bg-indigo-50 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
+                                    <i data-lucide="image-plus" class="w-6 h-6 text-indigo-600"></i>
+                                </div>
+                                <p class="text-sm text-slate-600 font-medium" id="lblChroma">คลิกหรือลากรูปมาวางที่นี่</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-3">2. เลือกสีที่ต้องการลบ</label>
+                            
+                            <button id="autoDetectBtn" class="w-full mb-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs font-medium py-2 px-3 rounded-lg flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all opacity-50 cursor-not-allowed" disabled>
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> ตรวจจับอัตโนมัติ (Auto Detect)
+                            </button>
+
+                            <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                <div id="previewColor" class="w-10 h-10 rounded-lg shadow-sm border border-white ring-2 ring-slate-200 cursor-pointer transition hover:scale-105" style="background-color: #00ff00;"></div>
+                                <input type="color" id="pickerColor" value="#00ff00" class="w-0 h-0 opacity-0 absolute">
+                                <button id="btnPick" class="flex-1 bg-white border border-slate-200 text-slate-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition flex items-center justify-center gap-2">
+                                    <i data-lucide="pipette" class="w-4 h-4"></i> จิ้มดูดสีจากภาพ
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex justify-between mb-2">
+                                    <label class="text-xs font-bold text-slate-500 uppercase">ค่าความต่างสี (Tolerance)</label>
+                                    <span id="valTolerance" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">100</span>
+                                </div>
+                                <input type="range" id="rngTolerance" min="0" max="250" value="100" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                            </div>
+                            <div>
+                                <div class="flex justify-between mb-2">
+                                    <label class="text-xs font-bold text-slate-500 uppercase">ความฟุ้งขอบ (Softness)</label>
+                                    <span id="valSmooth" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">0</span>
+                                </div>
+                                <input type="range" id="rngSmooth" min="0" max="20" value="0" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-3">3. พื้นหลังใหม่</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button onclick="setBgMode('transparent')" id="btnBgTrans" class="py-2 text-xs font-medium rounded-lg border border-indigo-600 bg-indigo-50 text-indigo-700 transition">โปร่งใส</button>
+                                <button onclick="setBgMode('color')" id="btnBgColor" class="py-2 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition">สีล้วน</button>
+                                <button onclick="setBgMode('image')" id="btnBgImg" class="py-2 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition">รูปภาพ</button>
+                            </div>
+                            <div id="optBgColor" class="hidden mt-3 animate-fade-in"><input type="color" id="inpBgColor" value="#ffffff" class="w-full h-9 rounded cursor-pointer border border-slate-300"></div>
+                            <div id="optBgImg" class="hidden mt-3 animate-fade-in"><input type="file" id="inpBgImg" accept="image/*" class="block w-full text-xs text-slate-500"></div>
+                        </div>
+                    </div>
+
+                    <button id="btnDownloadChroma" class="w-full mt-6 bg-indigo-600 text-white font-medium py-3 px-4 rounded-xl hover:bg-indigo-700 transition shadow-md shadow-indigo-200 flex items-center justify-center gap-2 active:scale-95">
+                        <i data-lucide="download" class="w-5 h-5"></i> ดาวน์โหลดผลลัพธ์
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-1 h-full min-h-[500px] flex flex-col">
+                    <div class="relative flex-grow rounded-xl overflow-hidden canvas-bg flex items-center justify-center border border-slate-100 m-1">
+                        <canvas id="cvsChroma" class="shadow-sm"></canvas>
+                        <div id="phChroma" class="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none">
+                            <i data-lucide="image" class="w-20 h-20 mb-4 opacity-50"></i>
+                            <p class="text-lg font-medium text-slate-400">พื้นที่แสดงผลรูปภาพ</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================== MODE 2: SLICER ================== -->
+        <div id="sectionSlicer" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
+            <div class="lg:col-span-4 space-y-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                    <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="w-1 h-6 bg-pink-500 rounded-full"></span>
+                        ตั้งค่าการตัดแบ่ง
+                    </h2>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-slate-700 mb-2">1. เลือกรูปภาพ</label>
+                        <div id="dropSlicer" class="relative group cursor-pointer">
+                            <input type="file" id="inpSlicer" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 flex items-center justify-center gap-3 transition-all group-hover:border-pink-400 group-hover:bg-pink-50">
+                                <i data-lucide="scissors" class="w-5 h-5 text-pink-500"></i>
+                                <div>
+                                    <p class="text-sm text-slate-600 font-medium" id="lblSlicer">คลิกเพื่อเลือกรูป</p>
+                                    <p class="text-[10px] text-indigo-500 font-medium hidden" id="lblAutoImport">นำเข้าจาก Chroma Key แล้ว</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-slate-700 mb-3">2. รูปแบบการตัด</label>
+                        <div class="flex bg-slate-100 p-1 rounded-lg mb-4">
+                            <button onclick="setSliceMode('grid')" id="modeGridBtn" class="flex-1 py-2 text-xs rounded-md bg-white text-pink-600 shadow-sm font-bold transition">แบบตาราง (Grid)</button>
+                            <button onclick="setSliceMode('manual')" id="modeManualBtn" class="flex-1 py-2 text-xs rounded-md text-slate-500 hover:text-slate-700 transition">ลากเส้นเอง (Manual)</button>
+                        </div>
+
+                        <div id="ctrlGrid" class="space-y-3">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-xs text-slate-500 block mb-1">คอลัมน์ (แนวตั้ง)</label>
+                                    <div class="flex items-center bg-white rounded-lg border border-slate-200 h-9">
+                                        <button onclick="adjGrid('col', -1)" class="px-3 text-slate-400 hover:text-pink-500">-</button>
+                                        <input type="number" id="valCols" value="3" class="w-full text-center text-sm font-bold outline-none text-slate-700" readonly>
+                                        <button onclick="adjGrid('col', 1)" class="px-3 text-slate-400 hover:text-pink-500">+</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-xs text-slate-500 block mb-1">แถว (แนวนอน)</label>
+                                    <div class="flex items-center bg-white rounded-lg border border-slate-200 h-9">
+                                        <button onclick="adjGrid('row', -1)" class="px-3 text-slate-400 hover:text-pink-500">-</button>
+                                        <input type="number" id="valRows" value="3" class="w-full text-center text-sm font-bold outline-none text-slate-700" readonly>
+                                        <button onclick="adjGrid('row', 1)" class="px-3 text-slate-400 hover:text-pink-500">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="ctrlManual" class="hidden space-y-3">
+                            <p class="text-xs text-slate-500 mb-2">คลิกบนรูปเพื่อเพิ่มเส้น หรือลากเส้นที่มีอยู่เพื่อย้าย</p>
+                            <button onclick="importGridToManual()" class="w-full py-2 px-3 mb-2 rounded-lg border border-pink-200 bg-pink-50 text-pink-700 text-xs font-medium hover:bg-pink-100 transition flex items-center justify-center gap-2">
+                                <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i> ดึงเส้นจากตาราง (Import Grid)
+                            </button>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="setManualTool('x')" id="toolX" class="tool-btn active flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition">
+                                    <i data-lucide="columns" class="w-4 h-4"></i> เพิ่มเส้นตั้ง
+                                </button>
+                                <button onclick="setManualTool('y')" id="toolY" class="tool-btn flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition">
+                                    <i data-lucide="rows" class="w-4 h-4"></i> เพิ่มเส้นนอน
+                                </button>
+                            </div>
+                            <button onclick="clearManualLines()" class="w-full py-1.5 text-xs text-red-500 hover:text-red-700 underline decoration-dotted">ล้างเส้นตัดทั้งหมด</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-6 pt-4 border-t border-slate-100">
+                        <label class="block text-sm font-medium text-slate-700 mb-2">3. ขนาดรูปผลลัพธ์</label>
+                        <select id="selResMode" class="w-full text-sm border border-slate-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-pink-200 bg-white" onchange="toggleResInput()">
+                            <option value="original">ขนาดเดิมตามสัดส่วน (Original)</option>
+                            <option value="custom">กำหนดขนาดเอง (Custom Resize)</option>
+                        </select>
+                        <div id="boxCustomRes" class="hidden grid grid-cols-2 gap-3 mt-3 animate-fade-in">
+                            <input type="number" id="resW" placeholder="กว้าง (px)" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-pink-400">
+                            <input type="number" id="resH" placeholder="ยาว (px)" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-pink-400">
+                        </div>
+                    </div>
+
+                    <button id="btnSlice" class="w-full bg-pink-600 text-white font-medium py-3 px-4 rounded-xl hover:bg-pink-700 transition shadow-md shadow-pink-200 flex items-center justify-center gap-2 active:scale-95">
+                        <i data-lucide="scissors" class="w-5 h-5"></i> เริ่มตัดรูปภาพ
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8 space-y-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-1 flex flex-col min-h-[600px]">
+                    <div class="flex justify-between items-center px-4 py-2 border-b border-slate-50">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Preview Monitor</span>
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] text-slate-400" id="previewHint">Ready</span>
+                            <span class="text-[10px] text-pink-500 font-mono bg-pink-50 px-2 py-0.5 rounded-full" id="previewStatus">Total: 0</span>
+                        </div>
+                    </div>
+                    <div class="relative flex-grow rounded-b-xl overflow-hidden bg-slate-50 flex items-center justify-center m-1 cursor-crosshair">
+                        <canvas id="cvsSlicer" class="shadow-sm touch-none"></canvas>
+                        <div id="phSlicer" class="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none">
+                            <i data-lucide="layout-grid" class="w-16 h-16 mb-3 opacity-40"></i>
+                            <p class="text-sm font-medium text-slate-400">ภาพตัวอย่างจะปรากฏที่นี่</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="boxResults" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 p-6 animate-fade-in-up">
+                    <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                            ตัดเสร็จแล้ว (<span id="countResult">0</span> รูป)
+                        </h3>
+                        <div class="flex gap-2">
+                            <button id="btnZip" class="text-xs bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1.5 font-medium">
+                                <i data-lucide="archive" class="w-3.5 h-3.5"></i> ZIP ปกติ
+                            </button>
+                            <button id="btnZipLine" class="text-xs bg-line text-white border border-line px-3 py-1.5 rounded-lg hover:opacity-90 transition flex items-center gap-1.5 font-medium shadow-sm">
+                                <i data-lucide="message-circle" class="w-3.5 h-3.5"></i> LINE Sticker ZIP
+                            </button>
+                        </div>
+                    </div>
+                    <div id="gridResults" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        const state = {
+            chroma: { img: null, color: {r:0,g:255,b:0}, tol: 100, smooth: 0, bgType: 'transparent', bgColor: '#ffffff', bgImg: null, isPicking: false },
+            slicer: { img: null, mode: 'grid', cols: 3, rows: 3, manualLines: { x: [], y: [] }, manualTool: 'x', resMode: 'original', dragging: null }
+        };
+
+        function initDragDrop(areaId, inputId, callback) {
+            const area = document.getElementById(areaId), input = document.getElementById(inputId);
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => area.addEventListener(e, (ev) => { ev.preventDefault(); ev.stopPropagation(); }));
+            ['dragenter', 'dragover'].forEach(e => area.addEventListener(e, () => area.classList.add('drag-active')));
+            ['dragleave', 'drop'].forEach(e => area.addEventListener(e, () => area.classList.remove('drag-active')));
+            area.addEventListener('drop', (e) => { if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0], callback); });
+            input.addEventListener('change', (e) => { if(e.target.files.length) handleFile(e.target.files[0], callback); });
+        }
+        function handleFile(file, callback) {
+            if(!file.type.startsWith('image/')) return;
+            const r = new FileReader(); r.onload = (e) => { const i = new Image(); i.onload = () => callback(i, file.name); i.src = e.target.result; }; r.readAsDataURL(file);
+        }
+
+        function fitCanvas(id, img) {
+            const cvs = document.getElementById(id), parent = cvs.parentElement;
+            const MAX = 2000; let w = img.width, h = img.height;
+            if(w > MAX || h > MAX) { const r = Math.min(MAX/w, MAX/h); w*=r; h*=r; }
+            cvs.width = w; cvs.height = h;
+            const pW = parent.clientWidth || parent.getBoundingClientRect().width, pH = parent.clientHeight || parent.getBoundingClientRect().height;
+            cvs.style.width = (w/h > pW/pH) ? '100%' : 'auto';
+            cvs.style.height = (w/h > pW/pH) ? 'auto' : '100%';
+        }
+
+        function switchMode(mode) {
+            const btnC = document.getElementById('navChroma'), btnS = document.getElementById('navSlicer');
+            const secC = document.getElementById('sectionChroma'), secS = document.getElementById('sectionSlicer');
+            if (mode === 'chroma') {
+                btnC.className = "px-4 py-2 rounded-lg text-sm font-medium transition-all bg-white text-indigo-600 shadow-sm flex items-center gap-2";
+                btnS.className = "px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700 flex items-center gap-2";
+                secC.classList.remove('hidden'); secC.classList.add('grid');
+                secS.classList.add('hidden'); secS.classList.remove('grid');
+            } else {
+                btnS.className = "px-4 py-2 rounded-lg text-sm font-medium transition-all bg-white text-pink-600 shadow-sm flex items-center gap-2";
+                btnC.className = "px-4 py-2 rounded-lg text-sm font-medium transition-all text-slate-500 hover:text-slate-700 flex items-center gap-2";
+                secC.classList.add('hidden'); secC.classList.remove('grid');
+                secS.classList.remove('hidden'); secS.classList.add('grid');
+                if (state.chroma.img && !state.slicer.img) {
+                    const img = new Image();
+                    img.onload = () => {
+                        state.slicer.img = img;
+                        document.getElementById('phSlicer').classList.add('hidden');
+                        document.getElementById('lblSlicer').textContent = "ใช้ภาพจาก Chroma Key";
+                        document.getElementById('lblAutoImport').classList.remove('hidden');
+                        fitCanvas('cvsSlicer', img); renderSlicerPreview();
+                    };
+                    img.src = document.getElementById('cvsChroma').toDataURL();
+                }
+            }
+        }
+
+        initDragDrop('dropChroma', 'inpChroma', (img, name) => {
+            state.chroma.img = img;
+            document.getElementById('lblChroma').textContent = name;
+            document.getElementById('phChroma').classList.add('hidden');
+            document.getElementById('autoDetectBtn').disabled = false;
+            document.getElementById('autoDetectBtn').classList.remove('opacity-50', 'cursor-not-allowed');
+            fitCanvas('cvsChroma', img); renderChroma();
+        });
+        
+        document.getElementById('autoDetectBtn').addEventListener('click', () => {
+            if(!state.chroma.img) return;
+            const tmp = document.createElement('canvas'), t = tmp.getContext('2d');
+            tmp.width = 100; tmp.height = 100; t.drawImage(state.chroma.img, 0, 0, 100, 100);
+            const p = t.getImageData(0, 0, 1, 1).data; 
+            state.chroma.color = {r:p[0], g:p[1], b:p[2]};
+            document.getElementById('previewColor').style.backgroundColor = rgbToHex(p[0],p[1],p[2]);
+            document.getElementById('pickerColor').value = rgbToHex(p[0],p[1],p[2]);
+            renderChroma();
+        });
+
+        function renderChroma() {
+            if(!state.chroma.img) return;
+            const cvs = document.getElementById('cvsChroma'), ctx = cvs.getContext('2d'), w = cvs.width, h = cvs.height;
+            ctx.clearRect(0,0,w,h);
+            if(state.chroma.bgType==='color') { ctx.fillStyle=state.chroma.bgColor; ctx.fillRect(0,0,w,h); }
+            else if(state.chroma.bgType==='image' && state.chroma.bgImg) {
+                const i = state.chroma.bgImg, s = Math.max(w/i.width, h/i.height);
+                ctx.drawImage(i, (w/2)-(i.width/2)*s, (h/2)-(i.height/2)*s, i.width*s, i.height*s);
+            }
+            const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+            const tCtx = tmp.getContext('2d'); tCtx.drawImage(state.chroma.img, 0,0, w, h);
+            const frame = tCtx.getImageData(0,0,w,h), d = frame.data, {r:tr,g:tg,b:tb} = state.chroma.color;
+            for(let i=0; i<d.length; i+=4) {
+                if(Math.sqrt((d[i]-tr)**2+(d[i+1]-tg)**2+(d[i+2]-tb)**2) < state.chroma.tol) d[i+3] = 0;
+                else if(Math.sqrt((d[i]-tr)**2+(d[i+1]-tg)**2+(d[i+2]-tb)**2) < state.chroma.tol + state.chroma.smooth) d[i+3] = ((Math.sqrt((d[i]-tr)**2+(d[i+1]-tg)**2+(d[i+2]-tb)**2)-state.chroma.tol)/state.chroma.smooth)*255;
+            }
+            ctx.putImageData(frame, 0, 0);
+        }
+        
+        document.getElementById('rngTolerance').addEventListener('input', (e) => { state.chroma.tol = parseInt(e.target.value); document.getElementById('valTolerance').textContent = state.chroma.tol; renderChroma(); });
+        document.getElementById('rngSmooth').addEventListener('input', (e) => { state.chroma.smooth = parseInt(e.target.value); document.getElementById('valSmooth').textContent = state.chroma.smooth; renderChroma(); });
+        document.getElementById('previewColor').addEventListener('click', () => document.getElementById('pickerColor').click());
+        document.getElementById('pickerColor').addEventListener('input', (e) => { document.getElementById('previewColor').style.backgroundColor = e.target.value; state.chroma.color = hexToRgb(e.target.value); renderChroma(); });
+        document.getElementById('btnPick').addEventListener('click', () => {
+            state.chroma.isPicking = !state.chroma.isPicking;
+            document.getElementById('btnPick').classList.toggle('bg-indigo-50');
+            document.getElementById('cvsChroma').style.cursor = state.chroma.isPicking ? 'crosshair' : 'default';
+        });
+        document.getElementById('cvsChroma').addEventListener('click', (e) => {
+            if(!state.chroma.isPicking) return;
+            const cvs = e.target, rect = cvs.getBoundingClientRect();
+            const scaleX = cvs.width / rect.width, scaleY = cvs.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX, y = (e.clientY - rect.top) * scaleY;
+            const p = cvs.getContext('2d').getImageData(x, y, 1, 1).data;
+            state.chroma.color = {r:p[0], g:p[1], b:p[2]};
+            document.getElementById('previewColor').style.backgroundColor = rgbToHex(p[0],p[1],p[2]);
+            document.getElementById('btnPick').click(); renderChroma();
+        });
+        window.setBgMode = (mode) => {
+            state.chroma.bgType = mode;
+            ['btnBgTrans','btnBgColor','btnBgImg'].forEach(id => document.getElementById(id).classList.remove('border-indigo-600','bg-indigo-50','text-indigo-700'));
+            document.getElementById(mode==='transparent'?'btnBgTrans':mode==='color'?'btnBgColor':'btnBgImg').classList.add('border-indigo-600','bg-indigo-50','text-indigo-700');
+            document.getElementById('optBgColor').classList.toggle('hidden', mode!=='color');
+            document.getElementById('optBgImg').classList.toggle('hidden', mode!=='image');
+            renderChroma();
+        };
+        document.getElementById('inpBgColor').addEventListener('input', (e) => { state.chroma.bgColor = e.target.value; renderChroma(); });
+        document.getElementById('inpBgImg').addEventListener('change', (e) => { if(e.target.files.length) handleFile(e.target.files[0], (i)=>{state.chroma.bgImg=i; renderChroma();}); });
+        document.getElementById('btnDownloadChroma').addEventListener('click', () => { if(state.chroma.img) { const l=document.createElement('a'); l.download='edited.png'; l.href=document.getElementById('cvsChroma').toDataURL(); l.click(); } });
+
+        initDragDrop('dropSlicer', 'inpSlicer', (img, name) => {
+            state.slicer.img = img;
+            document.getElementById('lblSlicer').textContent = name;
+            document.getElementById('phSlicer').classList.add('hidden');
+            fitCanvas('cvsSlicer', img); renderSlicerPreview();
+        });
+
+        window.setSliceMode = (mode) => {
+            state.slicer.mode = mode;
+            document.getElementById('ctrlGrid').classList.toggle('hidden', mode!=='grid');
+            document.getElementById('ctrlManual').classList.toggle('hidden', mode!=='manual');
+            document.getElementById('modeGridBtn').classList.toggle('bg-white', mode==='grid');
+            document.getElementById('modeGridBtn').classList.toggle('text-pink-600', mode==='grid');
+            document.getElementById('modeManualBtn').classList.toggle('bg-white', mode==='manual');
+            document.getElementById('modeManualBtn').classList.toggle('text-pink-600', mode==='manual');
+            document.getElementById('previewHint').textContent = mode==='grid' ? "Grid Mode" : "Click to add, Drag lines to move";
+            renderSlicerPreview();
+        };
+
+        window.adjGrid = (type, val) => {
+            if(type==='col') { state.slicer.cols = Math.max(1, state.slicer.cols+val); document.getElementById('valCols').value = state.slicer.cols; }
+            else { state.slicer.rows = Math.max(1, state.slicer.rows+val); document.getElementById('valRows').value = state.slicer.rows; }
+            renderSlicerPreview();
+        };
+
+        window.setManualTool = (tool) => {
+            state.slicer.manualTool = tool;
+            document.getElementById('toolX').classList.toggle('active', tool==='x');
+            document.getElementById('toolY').classList.toggle('active', tool==='y');
+        };
+
+        window.clearManualLines = () => { state.slicer.manualLines = { x: [], y: [] }; renderSlicerPreview(); };
+        window.importGridToManual = () => {
+            const linesX = [], linesY = [];
+            for(let i=1; i<state.slicer.cols; i++) linesX.push(i/state.slicer.cols);
+            for(let i=1; i<state.slicer.rows; i++) linesY.push(i/state.slicer.rows);
+            state.slicer.manualLines = { x: linesX, y: linesY };
+            setSliceMode('manual'); 
+        };
+
+        const cvsSlicer = document.getElementById('cvsSlicer');
+        function getHitLine(offsetX, offsetY) {
+            if(!state.slicer.img) return null;
+            const rect = cvsSlicer.getBoundingClientRect();
+            const relX = offsetX / rect.width, relY = offsetY / rect.height;
+            const TOLERANCE = 10 / rect.width;
+            for(let i=0; i<state.slicer.manualLines.x.length; i++) if(Math.abs(relX - state.slicer.manualLines.x[i]) < TOLERANCE) return { axis: 'x', index: i };
+            for(let i=0; i<state.slicer.manualLines.y.length; i++) if(Math.abs(relY - state.slicer.manualLines.y[i]) < (10/rect.height)) return { axis: 'y', index: i };
+            return null;
+        }
+
+        cvsSlicer.addEventListener('mousedown', (e) => {
+            if(!state.slicer.img || state.slicer.mode !== 'manual') return;
+            const rect = cvsSlicer.getBoundingClientRect();
+            const hit = getHitLine(e.clientX - rect.left, e.clientY - rect.top);
+            if(hit) { state.slicer.dragging = hit; }
+            else {
+                if(state.slicer.manualTool === 'x') state.slicer.manualLines.x.push((e.clientX - rect.left) / rect.width);
+                else state.slicer.manualLines.y.push((e.clientY - rect.top) / rect.height);
+                renderSlicerPreview();
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if(state.slicer.dragging) {
+                const rect = cvsSlicer.getBoundingClientRect();
+                let val = state.slicer.dragging.axis === 'x' ? (e.clientX - rect.left) / rect.width : (e.clientY - rect.top) / rect.height;
+                state.slicer.manualLines[state.slicer.dragging.axis][state.slicer.dragging.index] = Math.max(0, Math.min(1, val));
+                renderSlicerPreview();
+            }
+        });
+
+        cvsSlicer.addEventListener('mousemove', (e) => {
+            if(!state.slicer.img || state.slicer.mode !== 'manual') return;
+            if(!state.slicer.dragging) {
+                const rect = cvsSlicer.getBoundingClientRect();
+                const hit = getHitLine(e.clientX - rect.left, e.clientY - rect.top);
+                cvsSlicer.style.cursor = hit ? (hit.axis === 'x' ? 'col-resize' : 'row-resize') : 'cell';
+            }
+        });
+
+        window.addEventListener('mouseup', () => { state.slicer.dragging = null; });
+
+        function renderSlicerPreview() {
+            if(!state.slicer.img) return;
+            const ctx = cvsSlicer.getContext('2d'), w = cvsSlicer.width, h = cvsSlicer.height;
+            ctx.clearRect(0,0,w,h); ctx.drawImage(state.slicer.img, 0,0, w, h);
+            ctx.beginPath(); ctx.lineWidth = Math.max(2, w/300);
+            if(state.slicer.mode === 'grid') {
+                ctx.strokeStyle = '#ec4899'; ctx.setLineDash([5, 5]);
+                const cw = w/state.slicer.cols, ch = h/state.slicer.rows;
+                for(let i=1; i<state.slicer.cols; i++) { ctx.moveTo(i*cw, 0); ctx.lineTo(i*cw, h); }
+                for(let i=1; i<state.slicer.rows; i++) { ctx.moveTo(0, i*ch); ctx.lineTo(w, i*ch); }
+            } else {
+                ctx.strokeStyle = '#facc15'; ctx.setLineDash([]);
+                state.slicer.manualLines.x.forEach(rx => { const x = rx * w; ctx.moveTo(x, 0); ctx.lineTo(x, h); });
+                state.slicer.manualLines.y.forEach(ry => { const y = ry * h; ctx.moveTo(0, y); ctx.lineTo(w, y); });
+            }
+            ctx.stroke();
+            let total = state.slicer.mode === 'grid' ? state.slicer.cols * state.slicer.rows : (state.slicer.manualLines.x.length + 1) * (state.slicer.manualLines.y.length + 1);
+            document.getElementById('previewStatus').textContent = `Total: ${total}`;
+        }
+
+        window.toggleResInput = () => {
+            const mode = document.getElementById('selResMode').value;
+            state.slicer.resMode = mode;
+            document.getElementById('boxCustomRes').classList.toggle('hidden', mode !== 'custom');
+        };
+
+        document.getElementById('btnSlice').addEventListener('click', () => {
+            if(!state.slicer.img) return;
+            const img = state.slicer.img, cutsX = [], cutsY = [];
+            if(state.slicer.mode === 'grid') {
+                const cw = img.width/state.slicer.cols, ch = img.height/state.slicer.rows;
+                for(let i=0; i<state.slicer.cols; i++) cutsX.push(i*cw);
+                for(let i=0; i<state.slicer.rows; i++) cutsY.push(i*ch);
+            } else {
+                cutsX.push(0); state.slicer.manualLines.x.forEach(rx => cutsX.push(rx * img.width));
+                cutsY.push(0); state.slicer.manualLines.y.forEach(ry => cutsY.push(ry * img.height));
+                cutsX.sort((a,b)=>a-b); cutsY.sort((a,b)=>a-b);
+            }
+            cutsX.push(img.width); cutsY.push(img.height);
+
+            const grid = document.getElementById('gridResults'); grid.innerHTML = '';
+            document.getElementById('boxResults').classList.remove('hidden');
+            let count = 0;
+            for(let y=0; y<cutsY.length-1; y++) {
+                for(let x=0; x<cutsX.length-1; x++) {
+                    const sx = cutsX[x], sy = cutsY[y], sw = cutsX[x+1] - sx, sh = cutsY[y+1] - sy;
+                    if(sw < 1 || sh < 1) continue;
+                    let tw = sw, th = sh;
+                    if(state.slicer.resMode === 'custom') {
+                        tw = parseInt(document.getElementById('resW').value) || sw;
+                        th = parseInt(document.getElementById('resH').value) || sh;
+                    }
+                    const cvs = document.createElement('canvas'); cvs.width = tw; cvs.height = th;
+                    cvs.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, tw, th);
+                    const div = document.createElement('div');
+                    div.className = "bg-slate-50 border border-slate-200 rounded p-1 shadow-sm hover:scale-105 transition";
+                    const iEl = new Image(); iEl.src = cvs.toDataURL(); iEl.className = "w-full h-auto rounded";
+                    iEl.dataset.filename = `slice_${y+1}_${x+1}.png`; iEl.dataset.raw = cvs.toDataURL();
+                    div.appendChild(iEl); grid.appendChild(div); count++;
+                }
+            }
+            document.getElementById('countResult').textContent = count;
+            document.getElementById('boxResults').scrollIntoView({behavior:'smooth'});
+        });
+
+        document.getElementById('btnZip').addEventListener('click', async () => {
+            const imgs = document.querySelectorAll('#gridResults img'); if(!imgs.length) return;
+            const btn = document.getElementById('btnZip'), oldHtml = btn.innerHTML;
+            btn.innerHTML = '...'; btn.disabled = true;
+            const zip = new JSZip();
+            imgs.forEach(i => zip.file(i.dataset.filename, i.src.split(',')[1], {base64:true}));
+            const c = await zip.generateAsync({type:"blob"});
+            const l = document.createElement('a'); l.href = URL.createObjectURL(c); l.download = "slices.zip"; l.click();
+            btn.innerHTML = oldHtml; btn.disabled = false;
+        });
+
+        document.getElementById('btnZipLine').addEventListener('click', async () => {
+            const imgs = document.querySelectorAll('#gridResults img'); if(!imgs.length) return;
+            const btn = document.getElementById('btnZipLine'), oldHtml = btn.innerHTML;
+            btn.innerHTML = '...'; btn.disabled = true;
+            
+            const zip = new JSZip();
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            const resizeImage = async (src, maxW, maxH, strictSize = false) => {
+                return new Promise(resolve => {
+                    const i = new Image();
+                    i.onload = () => {
+                        let w = i.width, h = i.height;
+                        const scale = Math.min(maxW/w, maxH/h);
+                        // Usually we only scale down, but for exact size icons, we might scale up or just fit.
+                        // For tab/main images, better to fit inside.
+                        let drawW = w * scale;
+                        let drawH = h * scale;
+                        
+                        if (strictSize) {
+                            // Enforce exact canvas size (e.g. 96x74)
+                            canvas.width = maxW; 
+                            canvas.height = maxH;
+                        } else {
+                            // Flexible size (up to maxW x maxH)
+                            if (scale < 1) { 
+                                drawW = w * scale; 
+                                drawH = h * scale; 
+                            } else {
+                                drawW = w; 
+                                drawH = h;
+                            }
+                            canvas.width = drawW; 
+                            canvas.height = drawH;
+                        }
+                        
+                        ctx.clearRect(0,0,canvas.width,canvas.height);
+                        
+                        // Center image
+                        const x = (canvas.width - drawW) / 2;
+                        const y = (canvas.height - drawH) / 2;
+                        
+                        ctx.drawImage(i, x, y, drawW, drawH);
+                        resolve(canvas.toDataURL().split(',')[1]);
+                    };
+                    i.src = src;
+                });
+            };
+
+            for (let idx = 0; idx < imgs.length; idx++) {
+                // Stickers: Flexible up to 370x320
+                const data = await resizeImage(imgs[idx].src, 370, 320, false);
+                zip.file(String(idx + 1).padStart(2, '0') + ".png", data, {base64: true});
+            }
+            if (imgs.length > 0) {
+                // Main: Strict 240x240
+                zip.file("main.png", await resizeImage(imgs[0].src, 240, 240, true), {base64: true});
+                // Tab: Strict 96x74
+                zip.file("tab.png", await resizeImage(imgs[0].src, 96, 74, true), {base64: true});
+            }
+            const c = await zip.generateAsync({type:"blob"});
+            const l = document.createElement('a'); l.href = URL.createObjectURL(c); l.download = "line_stickers.zip"; l.click();
+            btn.innerHTML = oldHtml; btn.disabled = false;
+        });
+
+        function hexToRgb(h) { const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r ? { r: parseInt(r[1], 16), g: parseInt(r[2], 16), b: parseInt(r[3], 16) } : {r:0,g:0,b:0}; }
+        function rgbToHex(r, g, b) { return "#" + ((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
+    </script>
+</body>
+</html>
