@@ -61,6 +61,47 @@
             color: #be185d;
             border-color: #fbcfe8;
         }
+
+        /* Selection Styles */
+        .slice-item {
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid transparent;
+            overflow: hidden;
+        }
+        .slice-item.selected {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+            transform: scale(0.98);
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.1), 0 2px 4px -1px rgba(79, 70, 229, 0.06);
+        }
+        .slice-item.selected::after {
+            content: '✓';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: #4f46e5;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+        .slice-item:not(.selected) {
+            opacity: 0.5;
+            filter: grayscale(100%);
+        }
+        .slice-item:not(.selected):hover {
+            opacity: 0.8;
+            filter: grayscale(50%);
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -289,11 +330,23 @@
 
                 <div id="boxResults" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100 p-6 animate-fade-in-up">
                     <div class="border-b border-slate-100 pb-3 mb-4">
-                        <div class="flex justify-between items-center mb-2">
+                        <div class="flex flex-wrap justify-between items-center gap-3 mb-3">
                             <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
                                 <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                ตัดเสร็จแล้ว (<span id="countResult">0</span> รูป)
+                                ผลลัพธ์การตัด
                             </h3>
+                            
+                            <!-- Selection Controls -->
+                            <div class="flex items-center gap-2 mr-auto ml-2">
+                                <label class="flex items-center gap-2 cursor-pointer bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition select-none">
+                                    <input type="checkbox" id="selectAll" checked class="w-4 h-4 accent-indigo-600 cursor-pointer rounded" onchange="toggleSelectAll()">
+                                    <span class="text-xs text-slate-600 font-medium">เลือกทั้งหมด</span>
+                                </label>
+                                <span id="selectedCount" class="text-xs text-indigo-600 font-bold bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 transition-all">
+                                    เลือก 0 รูป
+                                </span>
+                            </div>
+
                             <div class="flex gap-2">
                                 <button id="btnZip" class="text-xs bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1.5 font-medium">
                                     <i data-lucide="archive" class="w-3.5 h-3.5"></i> ZIP ปกติ
@@ -552,6 +605,61 @@
             document.getElementById('boxCustomRes').classList.toggle('hidden', mode !== 'custom');
         };
 
+        // --- Selection Logic ---
+        function updateSelectedCount() {
+            const all = document.querySelectorAll('.slice-item');
+            const selected = document.querySelectorAll('.slice-item.selected');
+            const countEl = document.getElementById('selectedCount');
+            const selectAllCheckbox = document.getElementById('selectAll');
+            
+            if (all.length > 0) {
+                countEl.textContent = `เลือก ${selected.length} / ${all.length} รูป`;
+                
+                // Update checkbox state visually (indeterminate if partial)
+                if (selected.length === 0) {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = false;
+                } else if (selected.length === all.length) {
+                    selectAllCheckbox.checked = true;
+                    selectAllCheckbox.indeterminate = false;
+                } else {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = true;
+                }
+            } else {
+                countEl.textContent = "รอการตัด...";
+            }
+        }
+
+        function toggleSelectAll() {
+            const isChecked = document.getElementById('selectAll').checked;
+            const items = document.querySelectorAll('.slice-item');
+            items.forEach(item => {
+                if (isChecked) item.classList.add('selected');
+                else item.classList.remove('selected');
+            });
+            updateSelectedCount();
+        }
+
+        function createSliceItem(imgSrc, fileName) {
+            const div = document.createElement('div');
+            div.className = "slice-item selected rounded-lg bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200";
+            div.onclick = function() {
+                this.classList.toggle('selected');
+                updateSelectedCount();
+            };
+
+            const img = new Image();
+            img.src = imgSrc;
+            img.className = "w-full h-auto pointer-events-none"; // Prevent img drag interfering with click
+            
+            div.dataset.src = imgSrc;
+            div.dataset.filename = fileName;
+
+            div.appendChild(img);
+            return div;
+        }
+
         document.getElementById('btnSlice').addEventListener('click', () => {
             if(!state.slicer.img) return;
             const img = state.slicer.img, cutsX = [], cutsY = [];
@@ -568,6 +676,10 @@
 
             const grid = document.getElementById('gridResults'); grid.innerHTML = '';
             document.getElementById('boxResults').classList.remove('hidden');
+            // Reset Select All
+            document.getElementById('selectAll').checked = true;
+            document.getElementById('selectAll').indeterminate = false;
+            
             let count = 0;
             for(let y=0; y<cutsY.length-1; y++) {
                 for(let x=0; x<cutsX.length-1; x++) {
@@ -580,30 +692,39 @@
                     }
                     const cvs = document.createElement('canvas'); cvs.width = tw; cvs.height = th;
                     cvs.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, tw, th);
-                    const div = document.createElement('div');
-                    div.className = "bg-slate-50 border border-slate-200 rounded p-1 shadow-sm hover:scale-105 transition";
-                    const iEl = new Image(); iEl.src = cvs.toDataURL(); iEl.className = "w-full h-auto rounded";
-                    iEl.dataset.filename = `slice_${y+1}_${x+1}.png`; iEl.dataset.raw = cvs.toDataURL();
-                    div.appendChild(iEl); grid.appendChild(div); count++;
+                    
+                    const item = createSliceItem(cvs.toDataURL(), `slice_${y+1}_${x+1}.png`);
+                    grid.appendChild(item);
+                    count++;
                 }
             }
-            document.getElementById('countResult').textContent = count;
+            updateSelectedCount(); // Initial count update
             document.getElementById('boxResults').scrollIntoView({behavior:'smooth'});
         });
 
         document.getElementById('btnZip').addEventListener('click', async () => {
-            const imgs = document.querySelectorAll('#gridResults img'); if(!imgs.length) return;
+            // Select only items with .selected class
+            const items = document.querySelectorAll('.slice-item.selected');
+            if(!items.length) { alert('กรุณาเลือกรูปอย่างน้อย 1 รูป'); return; }
+            
             const btn = document.getElementById('btnZip'), oldHtml = btn.innerHTML;
             btn.innerHTML = '...'; btn.disabled = true;
+            
             const zip = new JSZip();
-            imgs.forEach(i => zip.file(i.dataset.filename, i.src.split(',')[1], {base64:true}));
+            items.forEach(item => {
+                zip.file(item.dataset.filename, item.dataset.src.split(',')[1], {base64:true});
+            });
+            
             const c = await zip.generateAsync({type:"blob"});
             const l = document.createElement('a'); l.href = URL.createObjectURL(c); l.download = "slices.zip"; l.click();
             btn.innerHTML = oldHtml; btn.disabled = false;
         });
 
         document.getElementById('btnZipLine').addEventListener('click', async () => {
-            const imgs = document.querySelectorAll('#gridResults img'); if(!imgs.length) return;
+            // Select only items with .selected class
+            const items = document.querySelectorAll('.slice-item.selected');
+            if(!items.length) { alert('กรุณาเลือกรูปอย่างน้อย 1 รูป'); return; }
+
             const btn = document.getElementById('btnZipLine'), oldHtml = btn.innerHTML;
             btn.innerHTML = '...'; btn.disabled = true;
             
@@ -617,34 +738,21 @@
                     i.onload = () => {
                         let w = i.width, h = i.height;
                         const scale = Math.min(maxW/w, maxH/h);
-                        // Usually we only scale down, but for exact size icons, we might scale up or just fit.
-                        // For tab/main images, better to fit inside.
                         let drawW = w * scale;
                         let drawH = h * scale;
                         
                         if (strictSize) {
-                            // Enforce exact canvas size (e.g. 96x74)
                             canvas.width = maxW; 
                             canvas.height = maxH;
                         } else {
-                            // Flexible size (up to maxW x maxH)
-                            if (scale < 1) { 
-                                drawW = w * scale; 
-                                drawH = h * scale; 
-                            } else {
-                                drawW = w; 
-                                drawH = h;
-                            }
+                            if (scale < 1) { drawW = w * scale; drawH = h * scale; } else { drawW = w; drawH = h; }
                             canvas.width = drawW; 
                             canvas.height = drawH;
                         }
                         
                         ctx.clearRect(0,0,canvas.width,canvas.height);
-                        
-                        // Center image
                         const x = (canvas.width - drawW) / 2;
                         const y = (canvas.height - drawH) / 2;
-                        
                         ctx.drawImage(i, x, y, drawW, drawH);
                         resolve(canvas.toDataURL().split(',')[1]);
                     };
@@ -652,17 +760,20 @@
                 });
             };
 
-            for (let idx = 0; idx < imgs.length; idx++) {
-                // Stickers: Flexible up to 370x320
-                const data = await resizeImage(imgs[idx].src, 370, 320, false);
+            // Use index for naming 01, 02 based on SELECTION order
+            for (let idx = 0; idx < items.length; idx++) {
+                const src = items[idx].dataset.src;
+                const data = await resizeImage(src, 370, 320, false);
                 zip.file(String(idx + 1).padStart(2, '0') + ".png", data, {base64: true});
             }
-            if (imgs.length > 0) {
-                // Main: Strict 240x240
-                zip.file("main.png", await resizeImage(imgs[0].src, 240, 240, true), {base64: true});
-                // Tab: Strict 96x74
-                zip.file("tab.png", await resizeImage(imgs[0].src, 96, 74, true), {base64: true});
+            
+            // Use the FIRST selected image for Main/Tab icons
+            if (items.length > 0) {
+                const mainSrc = items[0].dataset.src;
+                zip.file("main.png", await resizeImage(mainSrc, 240, 240, true), {base64: true});
+                zip.file("tab.png", await resizeImage(mainSrc, 96, 74, true), {base64: true});
             }
+            
             const c = await zip.generateAsync({type:"blob"});
             const l = document.createElement('a'); l.href = URL.createObjectURL(c); l.download = "line_stickers.zip"; l.click();
             btn.innerHTML = oldHtml; btn.disabled = false;
